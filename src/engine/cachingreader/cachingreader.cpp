@@ -461,7 +461,7 @@ CachingReader::ReadResult CachingReader::read(SINT startSample, SINT numSamples,
                     // finally fill the remaining buffer with silence.
                     break;
                 }
-                DEBUG_ASSERT(bufferedFrameIndexRange <= remainingFrameIndexRange);
+                DEBUG_ASSERT(bufferedFrameIndexRange.isSubrangeOf(remainingFrameIndexRange));
                 if (remainingFrameIndexRange.start() < bufferedFrameIndexRange.start()) {
                     const auto paddingFrameIndexRange =
                             mixxx::IndexRange::between(
@@ -530,8 +530,8 @@ void CachingReader::hintAndMaybeWake(const HintVector& hintList) {
             }
         }
 
-        VERIFY_OR_DEBUG_ASSERT(hintFrameCount > 0) {
-            kLogger.warning() << "ERROR: Negative hint length. Ignoring.";
+        VERIFY_OR_DEBUG_ASSERT(hintFrameCount >= 0) {
+            kLogger.warning() << "CachingReader: Ignoring negative hint length.";
             continue;
         }
 

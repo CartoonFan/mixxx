@@ -7,8 +7,8 @@
 #include <QDomNode>
 #include <QDomElement>
 #include <QScriptEngine>
-#include <QDir>
 #include <QScriptEngineDebugger>
+#include <QDir>
 #include <QtDebug>
 #include <QRegExp>
 
@@ -174,7 +174,7 @@ class SkinContext {
         QDomNode child = selectNode(node, nodeName);
         if (!child.isNull()) {
             bool ok = false;
-            double result = nodeToString(child).toInt(&ok);
+            int result = nodeToString(child).toInt(&ok);
             if (ok) {
                 *value = result;
                 return true;
@@ -235,7 +235,6 @@ class SkinContext {
     bool hasUncaughtScriptException() const {
         return m_pSharedState->scriptEngine.hasUncaughtException();
     }
-    void enableDebugger(bool state) const;
 
     QDebug logWarning(const char* file, const int line, const QDomNode& node) const;
 

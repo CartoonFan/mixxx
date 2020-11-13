@@ -19,8 +19,7 @@ EffectRack::EffectRack(EffectsManager* pEffectsManager,
           m_group(group),
           m_controlNumEffectChainSlots(ConfigKey(m_group, "num_effectunits")),
           m_controlClearRack(ConfigKey(m_group, "clear")) {
-    connect(&m_controlClearRack, SIGNAL(valueChanged(double)),
-            this, SLOT(slotClearRack(double)));
+    connect(&m_controlClearRack, &ControlObject::valueChanged, this, &EffectRack::slotClearRack);
     m_controlNumEffectChainSlots.setReadOnly();
     addToEngine();
 }
@@ -73,9 +72,9 @@ void EffectRack::removeFromEngine() {
     m_pEngineEffectRack = NULL;
 }
 
-void EffectRack::registerInputChannel(const ChannelHandleAndGroup& handle_group) {
+void EffectRack::registerInputChannel(const ChannelHandleAndGroup& handleGroup) {
     foreach (EffectChainSlotPointer pChainSlot, m_effectChainSlots) {
-        pChainSlot->registerInputChannel(handle_group);
+        pChainSlot->registerInputChannel(handleGroup);
     }
 }
 
@@ -204,7 +203,7 @@ QDomElement EffectRack::toXml(QDomDocument* doc) const {
     rackElement.appendChild(groupElement);
 
     QDomElement chainsElement = doc->createElement("Chains");
-    for (EffectChainSlotPointer pChainSlot : m_effectChainSlots) {
+    for (const EffectChainSlotPointer& pChainSlot : m_effectChainSlots) {
         QDomElement chain = pChainSlot->toXml(doc);
         chainsElement.appendChild(chain);
     }
@@ -213,7 +212,7 @@ QDomElement EffectRack::toXml(QDomDocument* doc) const {
 }
 
 void EffectRack::refresh() {
-    for (const auto& pChainSlot: m_effectChainSlots) {
+    for (const auto& pChainSlot : qAsConst(m_effectChainSlots)) {
         EffectChainPointer pChain = pChainSlot->getOrCreateEffectChain(m_pEffectsManager);
         pChain->refreshAllEffects();
     }
@@ -260,8 +259,8 @@ EffectChainSlotPointer StandardEffectRack::addEffectChainSlot() {
     // Register all the existing channels with the new EffectChain.
     const QSet<ChannelHandleAndGroup>& registeredChannels =
             m_pEffectChainManager->registeredInputChannels();
-    for (const ChannelHandleAndGroup& handle_group : registeredChannels) {
-        pChainSlot->registerInputChannel(handle_group);
+    for (const ChannelHandleAndGroup& handleGroup : registeredChannels) {
+        pChainSlot->registerInputChannel(handleGroup);
     }
 
     EffectChainSlotPointer pChainSlotPointer = EffectChainSlotPointer(pChainSlot);
@@ -300,9 +299,9 @@ OutputEffectRack::OutputEffectRack(EffectsManager* pEffectsManager,
     // TODO(Be): Remove this hideous hack to get the ChannelHandleAndGroup
     const QSet<ChannelHandleAndGroup>& registeredChannels =
             m_pEffectChainManager->registeredInputChannels();
-    for (const ChannelHandleAndGroup& handle_group : registeredChannels) {
-        if (handle_group.name() == "[MasterOutput]") {
-            masterHandleAndGroup = &handle_group;
+    for (const ChannelHandleAndGroup& handleGroup : registeredChannels) {
+        if (handleGroup.name() == "[MasterOutput]") {
+            masterHandleAndGroup = &handleGroup;
             break;
         }
     }
@@ -349,10 +348,10 @@ void PerGroupRack::setupForGroup(const QString& groupName) {
 
     // TODO(rryan): remove.
     const ChannelHandleAndGroup* handleAndGroup = nullptr;
-    for (const ChannelHandleAndGroup& handle_group :
-             m_pEffectChainManager->registeredInputChannels()) {
-        if (handle_group.name() == groupName) {
-            handleAndGroup = &handle_group;
+    for (const ChannelHandleAndGroup& handleGroup :
+            m_pEffectChainManager->registeredInputChannels()) {
+        if (handleGroup.name() == groupName) {
+            handleAndGroup = &handleGroup;
             break;
         }
     }

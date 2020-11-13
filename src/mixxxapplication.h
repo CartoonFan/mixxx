@@ -9,15 +9,15 @@ class MixxxApplication : public QApplication {
     Q_OBJECT
   public:
     MixxxApplication(int& argc, char** argv);
-    ~MixxxApplication() override;
+    ~MixxxApplication() override = default;
+
+    bool notify(QObject*, QEvent*) override;
 
   private:
     bool touchIsRightButton();
     void registerMetaTypes();
 
-    int m_fakeMouseSourcePointId;
-    QWidget* m_fakeMouseWidget;
-    enum Qt::MouseButton m_activeTouchButton;
+    int m_rightPressedButtons;
     ControlProxy* m_pTouchShift;
 
 };

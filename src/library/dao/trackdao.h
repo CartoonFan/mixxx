@@ -42,8 +42,6 @@ class TrackDAO : public QObject, public virtual DAO, public virtual GlobalTrackC
             UserSettingsPointer pConfig);
     ~TrackDAO() override;
 
-    void initialize(
-            const QSqlDatabase& database) override;
     void finish();
 
     QList<TrackId> resolveTrackIds(
@@ -73,13 +71,13 @@ class TrackDAO : public QObject, public virtual DAO, public virtual GlobalTrackC
 
   signals:
     // Forwarded from Track object
-    void trackDirty(TrackId trackId) const;
-    void trackClean(TrackId trackId) const;
+    void trackDirty(TrackId trackId);
+    void trackClean(TrackId trackId);
 
     // Multiple tracks
-    void tracksAdded(QSet<TrackId> trackIds) const;
-    void tracksChanged(QSet<TrackId> trackIds) const;
-    void tracksRemoved(QSet<TrackId> trackIds) const;
+    void tracksAdded(QSet<TrackId> trackIds);
+    void tracksChanged(QSet<TrackId> trackIds);
+    void tracksRemoved(QSet<TrackId> trackIds);
 
     void progressVerifyTracksOutside(QString path);
     void progressCoverArt(QString file);
@@ -157,8 +155,6 @@ class TrackDAO : public QObject, public virtual DAO, public virtual GlobalTrackC
             TrackId trackId,
             TrackFile fileInfo) override;
 
-    QSqlDatabase m_database;
-
     CueDAO& m_cueDao;
     PlaylistDAO& m_playlistDao;
     AnalysisDao& m_analysisDao;
@@ -180,7 +176,6 @@ class TrackDAO : public QObject, public virtual DAO, public virtual GlobalTrackC
 
     DISALLOW_COPY_AND_ASSIGN(TrackDAO);
 };
-
 
 Q_DECLARE_OPERATORS_FOR_FLAGS(TrackDAO::ResolveTrackIdFlags)
 

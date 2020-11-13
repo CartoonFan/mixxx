@@ -15,26 +15,22 @@
 
 #include "control/controlobject.h"
 #include "control/controlproxy.h"
-
-#include "controllers/keyboard/keyboardeventfilter.h"
-#include "mixer/playermanager.h"
-#include "mixer/basetrackplayer.h"
-#include "library/library.h"
-#include "util/xml.h"
 #include "controllers/controllerlearningeventfilter.h"
 #include "controllers/controllermanager.h"
-
-#include "skin/colorschemeparser.h"
-#include "skin/skincontext.h"
-#include "skin/launchimage.h"
-
+#include "controllers/keyboard/keyboardeventfilter.h"
 #include "effects/effectsmanager.h"
-
+#include "library/library.h"
+#include "mixer/basetrackplayer.h"
+#include "mixer/playermanager.h"
 #include "recording/recordingmanager.h"
-
+#include "skin/colorschemeparser.h"
+#include "skin/launchimage.h"
+#include "skin/skincontext.h"
 #include "util/cmdlineargs.h"
 #include "util/timer.h"
 #include "util/valuetransformer.h"
+#include "util/xml.h"
+#include "waveform/vsyncthread.h"
 #include "waveform/waveformwidgetfactory.h"
 #include "widget/controlwidgetconnection.h"
 #include "widget/wbasewidget.h"
@@ -81,6 +77,7 @@
 #include "widget/wtime.h"
 #include "widget/wtrackproperty.h"
 #include "widget/wtracktext.h"
+#include "widget/wtrackwidgetgroup.h"
 #include "widget/wvumeter.h"
 #include "widget/wwaveformviewer.h"
 #include "widget/wwidget.h"
@@ -95,14 +92,14 @@ QSet<QString> LegacySkinParser::s_sharedGroupStrings;
 
 static bool sDebug = false;
 
-ControlObject* controlFromConfigKey(const ConfigKey& key, bool bPersist,
-                                    bool* pCreated) {
-    if (key.isEmpty()) {
+ControlObject* LegacySkinParser::controlFromConfigKey(
+        const ConfigKey& key, bool bPersist, bool* pCreated) {
+    if (!key.isValid()) {
         return nullptr;
     }
     // Don't warn if the control doesn't exist. Skins use this to create
     // controls.
-    ControlObject* pControl = ControlObject::getControl(key, false);
+    ControlObject* pControl = ControlObject::getControl(key, ControlFlag::NoWarnIfMissing);
 
     if (pControl) {
         if (pCreated) {
@@ -121,15 +118,28 @@ ControlObject* controlFromConfigKey(const ConfigKey& key, bool bPersist,
     // button, actually make it a push button and set it to toggle.
     ControlPushButton* controlButton = new ControlPushButton(key, bPersist);
     controlButton->setButtonMode(ControlPushButton::TOGGLE);
+
     if (pCreated) {
         *pCreated = true;
     }
+
+    // If we created this control, add it to the set of skin-created
+    // controls, so that it can be deleted when the MixxxMainWindow is
+    // destroyed.
+    VERIFY_OR_DEBUG_ASSERT(m_pSkinCreatedControls) {
+        qWarning() << "Can't add skin-created control" << key << "to set, control will be leaked!";
+        return controlButton;
+    }
+    DEBUG_ASSERT(!m_pSkinCreatedControls->contains(controlButton));
+
+    m_pSkinCreatedControls->insert(controlButton);
+
     return controlButton;
 }
 
 ControlObject* LegacySkinParser::controlFromConfigNode(const QDomElement& element,
-                                                       const QString& nodeName,
-                                                       bool* created) {
+        const QString& nodeName,
+        bool* pCreated) {
     QDomElement keyElement = m_pContext->selectElement(element, nodeName);
     if (keyElement.isNull()) {
         return nullptr;
@@ -140,30 +150,33 @@ ControlObject* LegacySkinParser::controlFromConfigNode(const QDomElement& elemen
 
     bool bPersist = m_pContext->selectAttributeBool(keyElement, "persist", false);
 
-    return controlFromConfigKey(key, bPersist, created);
+    return controlFromConfigKey(key, bPersist, pCreated);
 }
 
 LegacySkinParser::LegacySkinParser(UserSettingsPointer pConfig)
         : m_pConfig(pConfig),
-          m_pKeyboard(NULL),
-          m_pPlayerManager(NULL),
-          m_pControllerManager(NULL),
-          m_pLibrary(NULL),
-          m_pVCManager(NULL),
-          m_pEffectsManager(NULL),
-          m_pRecordingManager(NULL),
-          m_pParent(NULL) {
+          m_pSkinCreatedControls(nullptr),
+          m_pKeyboard(nullptr),
+          m_pPlayerManager(nullptr),
+          m_pControllerManager(nullptr),
+          m_pLibrary(nullptr),
+          m_pVCManager(nullptr),
+          m_pEffectsManager(nullptr),
+          m_pRecordingManager(nullptr),
+          m_pParent(nullptr) {
 }
 
 LegacySkinParser::LegacySkinParser(UserSettingsPointer pConfig,
-                                   KeyboardEventFilter* pKeyboard,
-                                   PlayerManager* pPlayerManager,
-                                   ControllerManager* pControllerManager,
-                                   Library* pLibrary,
-                                   VinylControlManager* pVCMan,
-                                   EffectsManager* pEffectsManager,
-                                   RecordingManager* pRecordingManager)
+        QSet<ControlObject*>* pSkinCreatedControls,
+        KeyboardEventFilter* pKeyboard,
+        PlayerManager* pPlayerManager,
+        ControllerManager* pControllerManager,
+        Library* pLibrary,
+        VinylControlManager* pVCMan,
+        EffectsManager* pEffectsManager,
+        RecordingManager* pRecordingManager)
         : m_pConfig(pConfig),
+          m_pSkinCreatedControls(pSkinCreatedControls),
           m_pKeyboard(pKeyboard),
           m_pPlayerManager(pPlayerManager),
           m_pControllerManager(pControllerManager),
@@ -172,6 +185,7 @@ LegacySkinParser::LegacySkinParser(UserSettingsPointer pConfig,
           m_pEffectsManager(pEffectsManager),
           m_pRecordingManager(pRecordingManager),
           m_pParent(NULL) {
+    DEBUG_ASSERT(m_pSkinCreatedControls);
 }
 
 LegacySkinParser::~LegacySkinParser() {
@@ -320,8 +334,6 @@ QWidget* LegacySkinParser::parseSkin(const QString& skinPath, QWidget* pParent) 
 
     SkinManifest manifest = getSkinManifest(skinDocument);
 
-    // Keep track of created attribute controls so we can parent them.
-    QList<ControlObject*> created_attributes;
     // Apply SkinManifest attributes by looping through the proto.
     for (int i = 0; i < manifest.attribute_size(); ++i) {
         const SkinManifest::Attribute& attribute = manifest.attribute(i);
@@ -361,7 +373,6 @@ QWidget* LegacySkinParser::parseSkin(const QString& skinPath, QWidget* pParent) 
         }
 
         if (created) {
-            created_attributes.append(pControl);
             if (!attribute.persist()) {
                 // Only set the value if the control wasn't set up through
                 // the persist logic.  Skin attributes are always
@@ -392,12 +403,6 @@ QWidget* LegacySkinParser::parseSkin(const QString& skinPath, QWidget* pParent) 
         return NULL;
     } else if (widgets.size() > 1) {
         SKIN_WARNING(skinDocument, *m_pContext) << "Skin produced more than 1 widget!";
-    }
-    // Because the config is destroyed before MixxxMainWindow, we need to
-    // parent the attributes to some other widget.  Otherwise they won't
-    // be able to persist because the config will have already been deleted.
-    foreach(ControlObject* pControl, created_attributes) {
-        pControl->setParent(widgets[0]);
     }
     return widgets[0];
 }
@@ -549,6 +554,8 @@ QList<QWidget*> LegacySkinParser::parseNode(const QDomElement& node) {
         result = wrapWidget(parseSearchBox(node));
     } else if (nodeName == "WidgetGroup") {
         result = wrapWidget(parseWidgetGroup(node));
+    } else if (nodeName == "TrackWidgetGroup") {
+        result = wrapWidget(parseTrackWidgetGroup(node));
     } else if (nodeName == "WidgetStack") {
         result = wrapWidget(parseWidgetStack(node));
     } else if (nodeName == "SizeAwareStack") {
@@ -669,31 +676,26 @@ QWidget* LegacySkinParser::parseWidgetGroup(const QDomElement& node) {
 }
 
 QWidget* LegacySkinParser::parseWidgetStack(const QDomElement& node) {
-    bool createdNext = false;
-    ControlObject* pNextControl = controlFromConfigNode(
-            node.toElement(), "NextControl", &createdNext);
+    ControlObject* pNextControl = controlFromConfigNode(node.toElement(), "NextControl");
+    ;
     ConfigKey nextConfigKey;
     if (pNextControl != nullptr) {
         nextConfigKey = pNextControl->getKey();
     }
 
-    bool createdPrev = false;
-    ControlObject* pPrevControl = controlFromConfigNode(
-            node.toElement(), "PrevControl", &createdPrev);
+    ControlObject* pPrevControl = controlFromConfigNode(node.toElement(), "PrevControl");
     ConfigKey prevConfigKey;
     if (pPrevControl != nullptr) {
         prevConfigKey = pPrevControl->getKey();
     }
 
-    bool createdCurrentPage = false;
     ControlObject* pCurrentPageControl = NULL;
     ConfigKey currentPageConfigKey;
     QString currentpage_co = node.attribute("currentpage");
     if (currentpage_co.length() > 0) {
         ConfigKey configKey = ConfigKey::parseCommaSeparated(currentpage_co);
         bool persist = m_pContext->selectAttributeBool(node, "persist", false);
-        pCurrentPageControl = controlFromConfigKey(configKey, persist,
-                                                   &createdCurrentPage);
+        pCurrentPageControl = controlFromConfigKey(configKey, persist);
         if (pCurrentPageControl != nullptr) {
             currentPageConfigKey = pCurrentPageControl->getKey();
         }
@@ -704,18 +706,6 @@ QWidget* LegacySkinParser::parseWidgetStack(const QDomElement& node) {
     pStack->setObjectName("WidgetStack");
     pStack->setContentsMargins(0, 0, 0, 0);
     commonWidgetSetup(node, pStack);
-
-    if (createdNext && pNextControl) {
-        pNextControl->setParent(pStack);
-    }
-
-    if (createdPrev && pPrevControl) {
-        pPrevControl->setParent(pStack);
-    }
-
-    if (pCurrentPageControl != nullptr && createdCurrentPage) {
-        pCurrentPageControl->setParent(pStack);
-    }
 
     QWidget* pOldParent = m_pParent;
     m_pParent = pStack;
@@ -756,13 +746,7 @@ QWidget* LegacySkinParser::parseWidgetStack(const QDomElement& node) {
             QString trigger_configkey = element.attribute("trigger");
             if (trigger_configkey.length() > 0) {
                 ConfigKey configKey = ConfigKey::parseCommaSeparated(trigger_configkey);
-                bool created;
-                pControl = controlFromConfigKey(configKey, false, &created);
-                if (pControl != nullptr && created) {
-                    // If we created the control, parent it to the child widget so
-                    // it doesn't leak.
-                    pControl->setParent(pChild);
-                }
+                pControl = controlFromConfigKey(configKey, false);
             }
             int on_hide_select = -1;
             QString on_hide_attr = element.attribute("on_hide_select");
@@ -918,6 +902,7 @@ QWidget* LegacySkinParser::parseOverview(const QDomElement& node) {
     QString group = lookupNodeGroup(node);
     BaseTrackPlayer* pPlayer = m_pPlayerManager->getPlayer(group);
     if (!pPlayer) {
+        SKIN_WARNING(node, *m_pContext) << "No player found for group:" << group;
         return nullptr;
     }
 
@@ -933,8 +918,10 @@ QWidget* LegacySkinParser::parseOverview(const QDomElement& node) {
         overviewWidget = new WOverviewRGB(group, m_pPlayerManager, m_pConfig, m_pParent);
     }
 
-    connect(overviewWidget, SIGNAL(trackDropped(QString, QString)),
-            m_pPlayerManager, SLOT(slotLoadToPlayer(QString, QString)));
+    connect(overviewWidget,
+            &WOverview::trackDropped,
+            m_pPlayerManager,
+            &PlayerManager::slotLoadToPlayer);
     connect(overviewWidget, &WOverview::cloneDeck,
             m_pPlayerManager, &PlayerManager::slotCloneDeck);
 
@@ -945,10 +932,8 @@ QWidget* LegacySkinParser::parseOverview(const QDomElement& node) {
     overviewWidget->Init();
 
     // Connect the player's load and unload signals to the overview widget.
-    connect(pPlayer, SIGNAL(newTrackLoaded(TrackPointer)),
-            overviewWidget, SLOT(slotTrackLoaded(TrackPointer)));
-    connect(pPlayer, SIGNAL(loadingTrack(TrackPointer, TrackPointer)),
-            overviewWidget, SLOT(slotLoadingTrack(TrackPointer, TrackPointer)));
+    connect(pPlayer, &BaseTrackPlayer::newTrackLoaded, overviewWidget, &WOverview::slotTrackLoaded);
+    connect(pPlayer, &BaseTrackPlayer::loadingTrack, overviewWidget, &WOverview::slotLoadingTrack);
 
     // just in case track already loaded
     overviewWidget->slotLoadingTrack(pPlayer->getLoadedTrack(), TrackPointer());
@@ -961,6 +946,7 @@ QWidget* LegacySkinParser::parseVisual(const QDomElement& node) {
     QString group = lookupNodeGroup(node);
     BaseTrackPlayer* pPlayer = m_pPlayerManager->getPlayer(group);
     if (!pPlayer) {
+        SKIN_WARNING(node, *m_pContext) << "No player found for group:" << group;
         return nullptr;
     }
 
@@ -978,13 +964,19 @@ QWidget* LegacySkinParser::parseVisual(const QDomElement& node) {
     viewer->Init();
 
     // connect display with loading/unloading of tracks
-    QObject::connect(pPlayer, SIGNAL(newTrackLoaded(TrackPointer)),
-                     viewer, SLOT(slotTrackLoaded(TrackPointer)));
-    QObject::connect(pPlayer, SIGNAL(loadingTrack(TrackPointer, TrackPointer)),
-                     viewer, SLOT(slotLoadingTrack(TrackPointer, TrackPointer)));
+    QObject::connect(pPlayer,
+            &BaseTrackPlayer::newTrackLoaded,
+            viewer,
+            &WWaveformViewer::slotTrackLoaded);
+    QObject::connect(pPlayer,
+            &BaseTrackPlayer::loadingTrack,
+            viewer,
+            &WWaveformViewer::slotLoadingTrack);
 
-    connect(viewer, SIGNAL(trackDropped(QString, QString)),
-            m_pPlayerManager, SLOT(slotLoadToPlayer(QString, QString)));
+    connect(viewer,
+            &WWaveformViewer::trackDropped,
+            m_pPlayerManager,
+            &PlayerManager::slotLoadToPlayer);
     connect(viewer, &WWaveformViewer::cloneDeck,
             m_pPlayerManager, &PlayerManager::slotCloneDeck);
 
@@ -998,88 +990,138 @@ QWidget* LegacySkinParser::parseText(const QDomElement& node) {
     QString group = lookupNodeGroup(node);
     BaseTrackPlayer* pPlayer = m_pPlayerManager->getPlayer(group);
     if (!pPlayer) {
+        SKIN_WARNING(node, *m_pContext) << "No player found for group:" << group;
         return nullptr;
     }
 
-    WTrackText* p = new WTrackText(m_pParent,
+    WTrackText* pTrackText = new WTrackText(m_pParent,
             m_pConfig,
-            m_pLibrary->trackCollections(),
+            m_pLibrary,
             group);
-    setupLabelWidget(node, p);
+    setupLabelWidget(node, pTrackText);
 
-    connect(pPlayer, SIGNAL(newTrackLoaded(TrackPointer)),
-            p, SLOT(slotTrackLoaded(TrackPointer)));
-    connect(pPlayer, SIGNAL(loadingTrack(TrackPointer, TrackPointer)),
-            p, SLOT(slotLoadingTrack(TrackPointer, TrackPointer)));
-    connect(p, SIGNAL(trackDropped(QString,QString)),
-            m_pPlayerManager, SLOT(slotLoadToPlayer(QString,QString)));
-    connect(p, &WTrackText::cloneDeck,
-            m_pPlayerManager, &PlayerManager::slotCloneDeck);
+    connect(pPlayer, &BaseTrackPlayer::newTrackLoaded, pTrackText, &WTrackText::slotTrackLoaded);
+    connect(pPlayer, &BaseTrackPlayer::loadingTrack, pTrackText, &WTrackText::slotLoadingTrack);
+    connect(pTrackText,
+            &WTrackText::trackDropped,
+            m_pPlayerManager,
+            &PlayerManager::slotLoadToPlayer);
+    connect(pTrackText, &WTrackText::cloneDeck, m_pPlayerManager, &PlayerManager::slotCloneDeck);
 
     TrackPointer pTrack = pPlayer->getLoadedTrack();
     if (pTrack) {
-        p->slotTrackLoaded(pTrack);
+        pTrackText->slotTrackLoaded(pTrack);
     }
 
-    return p;
+    return pTrackText;
 }
 
 QWidget* LegacySkinParser::parseTrackProperty(const QDomElement& node) {
     QString group = lookupNodeGroup(node);
     BaseTrackPlayer* pPlayer = m_pPlayerManager->getPlayer(group);
     if (!pPlayer) {
+        SKIN_WARNING(node, *m_pContext) << "No player found for group:" << group;
         return nullptr;
     }
 
-    WTrackProperty* p = new WTrackProperty(
+    WTrackProperty* pTrackProperty = new WTrackProperty(
             m_pParent,
             m_pConfig,
-            m_pLibrary->trackCollections(),
+            m_pLibrary,
             group);
-    setupLabelWidget(node, p);
+    setupLabelWidget(node, pTrackProperty);
 
-    connect(pPlayer, SIGNAL(newTrackLoaded(TrackPointer)),
-            p, SLOT(slotTrackLoaded(TrackPointer)));
-    connect(pPlayer, SIGNAL(loadingTrack(TrackPointer, TrackPointer)),
-            p, SLOT(slotLoadingTrack(TrackPointer, TrackPointer)));
-    connect(p, SIGNAL(trackDropped(QString,QString)),
-            m_pPlayerManager, SLOT(slotLoadToPlayer(QString,QString)));
-    connect(p, &WTrackProperty::cloneDeck,
-            m_pPlayerManager, &PlayerManager::slotCloneDeck);
+    connect(pPlayer,
+            &BaseTrackPlayer::newTrackLoaded,
+            pTrackProperty,
+            &WTrackProperty::slotTrackLoaded);
+    connect(pPlayer,
+            &BaseTrackPlayer::loadingTrack,
+            pTrackProperty,
+            &WTrackProperty::slotLoadingTrack);
+    connect(pTrackProperty,
+            &WTrackProperty::trackDropped,
+            m_pPlayerManager,
+            &PlayerManager::slotLoadToPlayer);
+    connect(pTrackProperty,
+            &WTrackProperty::cloneDeck,
+            m_pPlayerManager,
+            &PlayerManager::slotCloneDeck);
 
     TrackPointer pTrack = pPlayer->getLoadedTrack();
     if (pTrack) {
-        p->slotTrackLoaded(pTrack);
+        pTrackProperty->slotTrackLoaded(pTrack);
     }
 
-    return p;
+    return pTrackProperty;
+}
+
+QWidget* LegacySkinParser::parseTrackWidgetGroup(const QDomElement& node) {
+    QString group = lookupNodeGroup(node);
+    BaseTrackPlayer* pPlayer = m_pPlayerManager->getPlayer(group);
+    if (!pPlayer) {
+        SKIN_WARNING(node, *m_pContext) << "No player found for group:" << group;
+        return nullptr;
+    }
+
+    WTrackWidgetGroup* pGroup = new WTrackWidgetGroup(
+            m_pParent,
+            m_pConfig,
+            m_pLibrary,
+            group);
+    commonWidgetSetup(node, pGroup);
+    pGroup->setup(node, *m_pContext);
+    pGroup->Init();
+    parseChildren(node, pGroup);
+
+    connect(pPlayer,
+            &BaseTrackPlayer::newTrackLoaded,
+            pGroup,
+            &WTrackWidgetGroup::slotTrackLoaded);
+    connect(pPlayer,
+            &BaseTrackPlayer::loadingTrack,
+            pGroup,
+            &WTrackWidgetGroup::slotLoadingTrack);
+    connect(pGroup,
+            &WTrackWidgetGroup::trackDropped,
+            m_pPlayerManager,
+            &PlayerManager::slotLoadToPlayer);
+    connect(pGroup,
+            &WTrackWidgetGroup::cloneDeck,
+            m_pPlayerManager,
+            &PlayerManager::slotCloneDeck);
+
+    TrackPointer pTrack = pPlayer->getLoadedTrack();
+    if (pTrack) {
+        pGroup->slotTrackLoaded(pTrack);
+    }
+    return pGroup;
 }
 
 QWidget* LegacySkinParser::parseStarRating(const QDomElement& node) {
     QString group = lookupNodeGroup(node);
     BaseTrackPlayer* pPlayer = m_pPlayerManager->getPlayer(group);
     if (!pPlayer) {
+        SKIN_WARNING(node, *m_pContext) << "No player found for group:" << group;
         return nullptr;
     }
 
-    WStarRating* p = new WStarRating(group, m_pParent);
-    commonWidgetSetup(node, p, false);
-    p->setup(node, *m_pContext);
+    WStarRating* pStarRating = new WStarRating(group, m_pParent);
+    commonWidgetSetup(node, pStarRating, false);
+    pStarRating->setup(node, *m_pContext);
 
-    connect(pPlayer, SIGNAL(newTrackLoaded(TrackPointer)),
-            p, SLOT(slotTrackLoaded(TrackPointer)));
-    connect(pPlayer, SIGNAL(playerEmpty()),
-            p, SLOT(slotTrackLoaded()));
+    connect(pPlayer, &BaseTrackPlayer::newTrackLoaded, pStarRating, &WStarRating::slotTrackLoaded);
+    connect(pPlayer, &BaseTrackPlayer::playerEmpty, pStarRating, [pStarRating]() {
+        pStarRating->slotTrackLoaded(TrackPointer());
+    });
 
     TrackPointer pTrack = pPlayer->getLoadedTrack();
     if (pTrack) {
-        p->slotTrackLoaded(pTrack);
+        pStarRating->slotTrackLoaded(pTrack);
     }
 
-    return p;
+    return pStarRating;
 }
-
-
 
 QWidget* LegacySkinParser::parseNumberRate(const QDomElement& node) {
     QString group = lookupNodeGroup(node);
@@ -1118,8 +1160,7 @@ QWidget* LegacySkinParser::parseEngineKey(const QDomElement& node) {
 }
 
 QWidget* LegacySkinParser::parseBeatSpinBox(const QDomElement& node) {
-    bool createdValueControl = false;
-    ControlObject* valueControl = controlFromConfigNode(node.toElement(), "Value", &createdValueControl);
+    ControlObject* valueControl = controlFromConfigNode(node.toElement(), "Value");
 
     ConfigKey configKey;
     if (valueControl != nullptr) {
@@ -1129,10 +1170,6 @@ QWidget* LegacySkinParser::parseBeatSpinBox(const QDomElement& node) {
     WBeatSpinBox* pSpinbox = new WBeatSpinBox(m_pParent, configKey);
     commonWidgetSetup(node, pSpinbox);
     pSpinbox->setup(node, *m_pContext);
-
-    if (createdValueControl && valueControl != nullptr) {
-        valueControl->setParent(pSpinbox);
-    }
 
     return pSpinbox;
 }
@@ -1179,16 +1216,20 @@ QWidget* LegacySkinParser::parseSpinny(const QDomElement& node) {
 
     QString group = lookupNodeGroup(node);
     BaseTrackPlayer* pPlayer = m_pPlayerManager->getPlayer(group);
+    if (!pPlayer) {
+        SKIN_WARNING(node, *m_pContext) << "No player found for group:" << group;
+        return nullptr;
+    }
     WSpinny* spinny = new WSpinny(m_pParent, group, m_pConfig, m_pVCManager, pPlayer);
     commonWidgetSetup(node, spinny);
 
-    connect(waveformWidgetFactory, SIGNAL(renderSpinnies(VSyncThread*)), spinny, SLOT(render(VSyncThread*)));
-    connect(waveformWidgetFactory, SIGNAL(swapSpinnies()),
-            spinny, SLOT(swap()));
-    connect(spinny, SIGNAL(trackDropped(QString, QString)),
-            m_pPlayerManager, SLOT(slotLoadToPlayer(QString, QString)));
-    connect(spinny, &WSpinny::cloneDeck,
-            m_pPlayerManager, &PlayerManager::slotCloneDeck);
+    connect(waveformWidgetFactory,
+            &WaveformWidgetFactory::renderSpinnies,
+            spinny,
+            &WSpinny::render);
+    connect(waveformWidgetFactory, &WaveformWidgetFactory::swapSpinnies, spinny, &WSpinny::swap);
+    connect(spinny, &WSpinny::trackDropped, m_pPlayerManager, &PlayerManager::slotLoadToPlayer);
+    connect(spinny, &WSpinny::cloneDeck, m_pPlayerManager, &PlayerManager::slotCloneDeck);
 
     spinny->setup(node, *m_pContext);
     spinny->installEventFilter(m_pKeyboard);
@@ -1219,8 +1260,14 @@ QWidget* LegacySkinParser::parseSearchBox(const QDomElement& node) {
 
 QWidget* LegacySkinParser::parseCoverArt(const QDomElement& node) {
     QString group = lookupNodeGroup(node);
-    BaseTrackPlayer* pPlayer = m_pPlayerManager->getPlayer(group);
-
+    BaseTrackPlayer* pPlayer = nullptr;
+    if (!group.isEmpty()) {
+        pPlayer = m_pPlayerManager->getPlayer(group);
+        if (!pPlayer) {
+            SKIN_WARNING(node, *m_pContext) << "No player found for group:" << group;
+            return nullptr;
+        }
+    }
     WCoverArt* pCoverArt = new WCoverArt(m_pParent, m_pConfig, group, pPlayer);
     commonWidgetSetup(node, pCoverArt);
     pCoverArt->setup(node, *m_pContext);
@@ -1228,15 +1275,14 @@ QWidget* LegacySkinParser::parseCoverArt(const QDomElement& node) {
     // If no group was provided, hook the widget up to the Library.
     if (group.isEmpty()) {
         // Connect cover art signals to the library
-        connect(m_pLibrary, SIGNAL(switchToView(const QString&)),
-                pCoverArt, SLOT(slotReset()));
-        connect(m_pLibrary, SIGNAL(enableCoverArtDisplay(bool)),
-                pCoverArt, SLOT(slotEnable(bool)));
-        connect(m_pLibrary, SIGNAL(trackSelected(TrackPointer)),
-                pCoverArt, SLOT(slotLoadTrack(TrackPointer)));
+        connect(m_pLibrary, &Library::switchToView, pCoverArt, &WCoverArt::slotReset);
+        connect(m_pLibrary, &Library::enableCoverArtDisplay, pCoverArt, &WCoverArt::slotEnable);
+        connect(m_pLibrary, &Library::trackSelected, pCoverArt, &WCoverArt::slotLoadTrack);
     } else if (pPlayer != nullptr) {
-        connect(pCoverArt, SIGNAL(trackDropped(QString, QString)),
-                m_pPlayerManager, SLOT(slotLoadToPlayer(QString, QString)));
+        connect(pCoverArt,
+                &WCoverArt::trackDropped,
+                m_pPlayerManager,
+                &PlayerManager::slotLoadToPlayer);
         connect(pCoverArt, &WCoverArt::cloneDeck,
                 m_pPlayerManager, &PlayerManager::slotCloneDeck);
     }
@@ -1984,9 +2030,7 @@ void LegacySkinParser::setupConnections(const QDomNode& node, WBaseWidget* pWidg
             !con.isNull();
             con = con.nextSibling()) {
         // Check that the control exists
-        bool created = false;
-        ControlObject* control = controlFromConfigNode(
-                con.toElement(), "ConfigKey", &created);
+        ControlObject* control = controlFromConfigNode(con.toElement(), "ConfigKey");
 
         if (control == nullptr) {
             continue;
@@ -2006,13 +2050,6 @@ void LegacySkinParser::setupConnections(const QDomNode& node, WBaseWidget* pWidg
                     new ControlWidgetPropertyConnection(pWidget, control->getKey(),
                                                         pTransformer, property);
             pWidget->addPropertyConnection(pConnection);
-
-            // If we created this control, bind it to the
-            // ControlWidgetConnection so that it is deleted when the connection
-            // is deleted.
-            if (created) {
-                control->setParent(pConnection);
-            }
         } else {
             bool nodeValue;
             Qt::MouseButton state = parseButtonState(con, *m_pContext);
@@ -2075,13 +2112,6 @@ void LegacySkinParser::setupConnections(const QDomNode& node, WBaseWidget* pWidg
                     pWidget, control->getKey(), pTransformer,
                     static_cast<ControlParameterWidgetConnection::DirectionOption>(directionOption),
                     static_cast<ControlParameterWidgetConnection::EmitOption>(emitOption));
-
-            // If we created this control, bind it to the
-            // ControlWidgetConnection so that it is deleted when the connection
-            // is deleted.
-            if (created) {
-                control->setParent(pConnection);
-            }
 
             switch (state) {
             case Qt::NoButton:

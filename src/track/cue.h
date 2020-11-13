@@ -6,7 +6,6 @@
 
 #include "audio/types.h"
 #include "track/cueinfo.h"
-#include "track/trackid.h"
 #include "util/color/rgbcolor.h"
 #include "util/memory.h"
 
@@ -18,16 +17,18 @@ class Cue : public QObject {
     Q_OBJECT
 
   public:
+    /// A position value for the cue that signals its position is not set
     static constexpr double kNoPosition = -1.0;
+    /// A value for #m_iHotCue signaling it is not a hotcue
     static constexpr int kNoHotCue = -1;
 
     Cue();
     Cue(
             const mixxx::CueInfo& cueInfo,
-            mixxx::audio::SampleRate sampleRate);
+            mixxx::audio::SampleRate sampleRate,
+            bool setDirty);
     Cue(
             int id,
-            TrackId trackId,
             mixxx::CueType type,
             double position,
             double length,
@@ -38,7 +39,6 @@ class Cue : public QObject {
 
     bool isDirty() const;
     int getId() const;
-    TrackId getTrackId() const;
 
     mixxx::CueType getType() const;
     void setType(mixxx::CueType type);
@@ -57,8 +57,7 @@ class Cue : public QObject {
             int hotCue = kNoHotCue);
 
     QString getLabel() const;
-    void setLabel(
-            QString label = QString());
+    void setLabel(QString label);
 
     mixxx::RgbColor getColor() const;
     void setColor(mixxx::RgbColor color);
@@ -75,13 +74,11 @@ class Cue : public QObject {
     void setDirty(bool dirty);
 
     void setId(int id);
-    void setTrackId(TrackId trackId);
 
     mutable QMutex m_mutex;
 
     bool m_bDirty;
     int m_iId;
-    TrackId m_trackId;
     mixxx::CueType m_type;
     double m_sampleStartPosition;
     double m_sampleEndPosition;

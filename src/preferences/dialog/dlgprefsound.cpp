@@ -109,9 +109,9 @@ DlgPrefSound::DlgPrefSound(QWidget* pParent, SoundManager* pSoundManager,
             this, SLOT(boothDelaySpinboxChanged(double)));
 
     m_pMicMonitorMode = new ControlProxy("[Master]", "talkover_mix", this);
-    micMonitorModeComboBox->addItem(tr("Master output only"),
+    micMonitorModeComboBox->addItem(tr("Main output only"),
         QVariant(static_cast<int>(EngineMaster::MicMonitorMode::MASTER)));
-    micMonitorModeComboBox->addItem(tr("Master and booth outputs"),
+    micMonitorModeComboBox->addItem(tr("Main and booth outputs"),
         QVariant(static_cast<int>(EngineMaster::MicMonitorMode::MASTER_AND_BOOTH)));
     micMonitorModeComboBox->addItem(tr("Direct monitor (recording and broadcasting only)"),
         QVariant(static_cast<int>(EngineMaster::MicMonitorMode::DIRECT_MONITOR)));
@@ -163,7 +163,7 @@ DlgPrefSound::DlgPrefSound(QWidget* pParent, SoundManager* pSoundManager,
     m_pMasterEnabled = new ControlProxy("[Master]", "enabled", this);
     masterMixComboBox->addItem(tr("Disabled"));
     masterMixComboBox->addItem(tr("Enabled"));
-    masterMixComboBox->setCurrentIndex(m_pMasterEnabled->get() ? 1 : 0);
+    masterMixComboBox->setCurrentIndex(m_pMasterEnabled->toBool() ? 1 : 0);
     connect(masterMixComboBox, SIGNAL(currentIndexChanged(int)),
             this, SLOT(masterMixChanged(int)));
     m_pMasterEnabled->connectValueChanged(this, &DlgPrefSound::masterEnabledChanged);
@@ -171,7 +171,7 @@ DlgPrefSound::DlgPrefSound(QWidget* pParent, SoundManager* pSoundManager,
     m_pMasterMonoMixdown = new ControlProxy("[Master]", "mono_mixdown", this);
     masterOutputModeComboBox->addItem(tr("Stereo"));
     masterOutputModeComboBox->addItem(tr("Mono"));
-    masterOutputModeComboBox->setCurrentIndex(m_pMasterMonoMixdown->get() ? 1 : 0);
+    masterOutputModeComboBox->setCurrentIndex(m_pMasterMonoMixdown->toBool() ? 1 : 0);
     connect(masterOutputModeComboBox, SIGNAL(currentIndexChanged(int)),
             this, SLOT(masterOutputModeComboBoxChanged(int)));
     m_pMasterMonoMixdown->connectValueChanged(this, &DlgPrefSound::masterMonoMixdownChanged);
@@ -190,10 +190,41 @@ DlgPrefSound::DlgPrefSound(QWidget* pParent, SoundManager* pSoundManager,
     // the limits warning is a Linux only thing
     limitsHint->hide();
 #endif // __LINUX__
+
+    // Set the focus policy for QComboBoxes (and wide QDoubleSpinBoxes) and
+    // connect them to the custom event filter below so they don't accept focus
+    // when we scroll the preferences page.
+    QObjectList objList = this->children();
+    for (int i = 0; i < objList.length(); ++i) {
+        QComboBox* combo = qobject_cast<QComboBox*>(objList[i]);
+        QDoubleSpinBox* spin = qobject_cast<QDoubleSpinBox*>(objList[i]);
+        if (combo) {
+            combo->setFocusPolicy(Qt::StrongFocus);
+            combo->installEventFilter(this);
+        } else if (spin) {
+            spin->setFocusPolicy(Qt::StrongFocus);
+            spin->installEventFilter(this);
+        }
+    }
 }
 
 DlgPrefSound::~DlgPrefSound() {
     delete m_pLatencyCompensation;
+}
+
+// Catch scroll events over comboboxes and pass them to the scroll area instead.
+bool DlgPrefSound::eventFilter(QObject* obj, QEvent* e) {
+    if (e->type() == QEvent::Wheel) {
+        // Reject scrolling only if widget is unfocused.
+        // Object to widget cast is needed to check the focus state.
+        QComboBox* combo = qobject_cast<QComboBox*>(obj);
+        QDoubleSpinBox* spin = qobject_cast<QDoubleSpinBox*>(obj);
+        if ((combo && !combo->hasFocus()) || (spin && !spin->hasFocus())) {
+            QApplication::sendEvent(verticalLayout_2, e);
+            return true;
+        }
+    }
+    return QObject::eventFilter(obj, e);
 }
 
 /**
@@ -533,7 +564,7 @@ void DlgPrefSound::updateAudioBufferSizes(int sampleRateIndex) {
     }
     audioBufferComboBox->clear();
     for (unsigned int i = 0; i < SoundManagerConfig::kMaxAudioBufferSizeIndex; ++i) {
-        float latency = framesPerBuffer / sampleRate * 1000;
+        const auto latency = static_cast<float>(framesPerBuffer / sampleRate * 1000);
         // i + 1 in the next line is a latency index as described in SSConfig
         audioBufferComboBox->addItem(tr("%1 ms").arg(latency,0,'g',3), i + 1);
         framesPerBuffer <<= 1; // *= 2
@@ -658,7 +689,8 @@ void DlgPrefSound::masterMixChanged(int value) {
 }
 
 void DlgPrefSound::masterEnabledChanged(double value) {
-    masterMixComboBox->setCurrentIndex(value ? 1 : 0);
+    const bool masterEnabled = (value != 0);
+    masterMixComboBox->setCurrentIndex(masterEnabled ? 1 : 0);
 }
 
 void DlgPrefSound::masterOutputModeComboBoxChanged(int value) {
@@ -666,7 +698,8 @@ void DlgPrefSound::masterOutputModeComboBoxChanged(int value) {
 }
 
 void DlgPrefSound::masterMonoMixdownChanged(double value) {
-    masterOutputModeComboBox->setCurrentIndex(value ? 1 : 0);
+    const bool masterMonoMixdownEnabled = (value != 0);
+    masterOutputModeComboBox->setCurrentIndex(masterMonoMixdownEnabled ? 1 : 0);
 }
 
 void DlgPrefSound::micMonitorModeComboBoxChanged(int value) {

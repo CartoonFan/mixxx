@@ -18,22 +18,22 @@ EffectChainManager::~EffectChainManager() {
     //qDebug() << debugString() << "destroyed";
 }
 
-void EffectChainManager::registerInputChannel(const ChannelHandleAndGroup& handle_group) {
-    VERIFY_OR_DEBUG_ASSERT(!m_registeredInputChannels.contains(handle_group)) {
+void EffectChainManager::registerInputChannel(const ChannelHandleAndGroup& handleGroup) {
+    VERIFY_OR_DEBUG_ASSERT(!m_registeredInputChannels.contains(handleGroup)) {
         return;
     }
-    m_registeredInputChannels.insert(handle_group);
+    m_registeredInputChannels.insert(handleGroup);
 
     for (auto& pRack : m_standardEffectRacks) {
-        pRack->registerInputChannel(handle_group);
+        pRack->registerInputChannel(handleGroup);
     }
 }
 
-void EffectChainManager::registerOutputChannel(const ChannelHandleAndGroup& handle_group) {
-    VERIFY_OR_DEBUG_ASSERT(!m_registeredOutputChannels.contains(handle_group)) {
+void EffectChainManager::registerOutputChannel(const ChannelHandleAndGroup& handleGroup) {
+    VERIFY_OR_DEBUG_ASSERT(!m_registeredOutputChannels.contains(handleGroup)) {
         return;
     }
-    m_registeredOutputChannels.insert(handle_group);
+    m_registeredOutputChannels.insert(handleGroup);
 }
 
 StandardEffectRackPointer EffectChainManager::addStandardEffectRack() {
@@ -144,13 +144,13 @@ EffectChainPointer EffectChainManager::getPrevEffectChain(EffectChainPointer pEf
 }
 
 void EffectChainManager::refeshAllRacks() {
-    for (const auto& pRack: m_standardEffectRacks) {
+    for (const auto& pRack : qAsConst(m_standardEffectRacks)) {
         pRack->refresh();
     }
-    for (const auto& pRack: m_equalizerEffectRacks) {
+    for (const auto& pRack : qAsConst(m_equalizerEffectRacks)) {
         pRack->refresh();
     }
-    for (const auto& pRack: m_quickEffectRacks) {
+    for (const auto& pRack : qAsConst(m_quickEffectRacks)) {
         pRack->refresh();
     }
 }
@@ -166,7 +166,7 @@ bool EffectChainManager::saveEffectChains() {
 
     QDomElement rootNode = doc.documentElement();
 
-    for (EffectRackPointer pRack : m_standardEffectRacks) {
+    for (const StandardEffectRackPointer& pRack : qAsConst(m_standardEffectRacks)) {
         rootNode.appendChild(pRack->toXml(&doc));
     }
     // TODO? Save QuickEffects in effects.xml too, or keep stored in ConfigObjects?

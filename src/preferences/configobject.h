@@ -24,12 +24,8 @@ class ConfigKey final {
 
     static ConfigKey parseCommaSeparated(const QString& key);
 
-    bool isEmpty() const {
-        return group.isEmpty() && item.isEmpty();
-    }
-
-    bool isNull() const {
-        return group.isNull() && item.isNull();
+    bool isValid() const {
+        return !group.isEmpty() && !item.isEmpty();
     }
 
     QString group;
@@ -178,7 +174,7 @@ template <class ValueType> class ConfigObject {
     QMultiHash<ValueType, ConfigKey> transpose() const;
 
     void reopen(const QString& file);
-    void save();
+    bool save();
 
     // Returns the resource path -- the path where controller presets, skins,
     // library schema, keyboard mappings, and more are stored.

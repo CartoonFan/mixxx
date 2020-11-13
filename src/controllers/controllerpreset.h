@@ -11,6 +11,8 @@
 #include <QSharedPointer>
 #include <QString>
 
+#include "defs_urls.h"
+
 class ControllerPresetVisitor;
 class ConstControllerPresetVisitor;
 
@@ -21,7 +23,7 @@ class ControllerPreset {
     ControllerPreset()
             : m_bDirty(false) {
     }
-    virtual ~ControllerPreset() {}
+    virtual ~ControllerPreset() = default;
 
     struct ScriptFileInfo {
         ScriptFileInfo()
@@ -55,6 +57,14 @@ class ControllerPreset {
 
     const QList<ScriptFileInfo>& getScriptFiles() const {
         return m_scripts;
+    }
+
+    void setModuleFileInfo(QFileInfo fileInfo) {
+        m_moduleFileInfo = fileInfo;
+    }
+
+    QFileInfo moduleFileInfo() const {
+        return m_moduleFileInfo;
     }
 
     inline void setDirty(bool bDirty) {
@@ -123,6 +133,24 @@ class ControllerPreset {
         return m_forumlink;
     }
 
+    void setManualPage(const QString& manualPage) {
+        m_manualPage = manualPage;
+        setDirty(true);
+    }
+
+    QString manualPage() const {
+        return m_manualPage;
+    }
+
+    QString manualLink() const {
+        QString page = manualPage();
+        if (page.isEmpty()) {
+            return {};
+        }
+
+        return MIXXX_MANUAL_CONTROLLERMANUAL_PREFIX + page + MIXXX_MANUAL_CONTROLLERMANUAL_SUFFIX;
+    }
+
     inline void setWikiLink(const QString wikilink) {
         m_wikilink = wikilink;
         setDirty(true);
@@ -161,7 +189,6 @@ class ControllerPreset {
     virtual void accept(ConstControllerPresetVisitor* visitor) const = 0;
     virtual bool isMappable() const = 0;
 
-    QList<ScriptFileInfo> scripts;
     // Optional list of controller device match details
     QList< QHash<QString,QString> > m_productMatches;
 
@@ -174,11 +201,13 @@ class ControllerPreset {
     QString m_author;
     QString m_description;
     QString m_forumlink;
+    QString m_manualPage;
     QString m_wikilink;
     QString m_schemaVersion;
     QString m_mixxxVersion;
 
     QList<ScriptFileInfo> m_scripts;
+    QFileInfo m_moduleFileInfo;
 };
 
 typedef QSharedPointer<ControllerPreset> ControllerPresetPointer;

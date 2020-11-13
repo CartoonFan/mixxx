@@ -188,7 +188,7 @@ void DlgControllerLearning::startListening() {
 }
 
 void DlgControllerLearning::slotStartLearningPressed() {
-    if (m_currentControl.isNull()) {
+    if (!m_currentControl.isValid()) {
         return;
     }
     m_firstMessageTimer.start();
@@ -209,7 +209,7 @@ void DlgControllerLearning::slotMessageReceived(unsigned char status,
                                                 unsigned char control,
                                                 unsigned char value) {
     // Ignore message since we don't have a control yet.
-    if (m_currentControl.isNull()) {
+    if (!m_currentControl.isValid()) {
         return;
     }
 
@@ -466,13 +466,18 @@ void DlgControllerLearning::controlClicked(ControlObject* pControl) {
         qWarning() << "Mixxx UI element clicked for which there is no "
                       "learnable control " << key.group << " " << key.item;
         QMessageBox::warning(
-                    this,
-                    Version::applicationName(),
-                    tr("The control you clicked in Mixxx is not learnable.\n"
-                       "This could be because you are using an old skin"
-                       " and this control is no longer supported.\n"
-                       "\nYou tried to learn: %1,%2").arg(key.group, key.item),
-                    QMessageBox::Ok, QMessageBox::Ok);
+                this,
+                Version::applicationName(),
+                tr("The control you clicked in Mixxx is not learnable.\n"
+                   "This could be because you are either using an old skin"
+                   " and this control is no longer supported, "
+                   "or you clicked a control that provides visual feedback"
+                   " and can only be mapped to outputs like LEDs via"
+                   " scripts.\n"
+                   "\nYou tried to learn: %1,%2")
+                        .arg(key.group, key.item),
+                QMessageBox::Ok,
+                QMessageBox::Ok);
         return;
     }
     controlPicked(key);
@@ -481,7 +486,7 @@ void DlgControllerLearning::controlClicked(ControlObject* pControl) {
 void DlgControllerLearning::comboboxIndexChanged(int index) {
     ConfigKey control =
             comboBoxChosenControl->itemData(index).value<ConfigKey>();
-    if (control.isNull()) {
+    if (!control.isValid()) {
         labelDescription->setText(tr(""));
         pushButtonStartLearn->setDisabled(true);
         return;

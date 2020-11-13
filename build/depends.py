@@ -228,6 +228,7 @@ class Qt(Dependence):
             'QtGui',
             'QtNetwork',
             'QtOpenGL',
+            'QtQml', # Needed for QJSEngine
             'QtScript',
             'QtScriptTools',
             'QtSql',
@@ -557,7 +558,7 @@ class SoundTouch(Dependence):
 
         if build.platform_is_linux or build.platform_is_bsd:
             # Try using system lib
-            if conf.CheckForPKG('soundtouch', '2.0.0'):
+            if conf.CheckForPKG('soundtouch', '2.1.1'):
                 # System Lib found
                 if not conf.CheckLib(['SoundTouch']):
                     raise Exception(
@@ -566,7 +567,9 @@ class SoundTouch(Dependence):
                 self.INTERNAL_LINK = False
 
         if self.INTERNAL_LINK:
-            env.Append(CPPPATH=['#' + self.SOUNDTOUCH_INTERNAL_PATH])
+            # The system includes all start with <soundtouch/...>, i.e.
+            # we must omit the "soundtouch" path component here!
+            env.Append(CPPPATH=['#/lib'])
 
             # Prevents circular import.
             from .features import Optimize
@@ -702,14 +705,6 @@ class FpClassify(Dependence):
                 env['CCFLAGS'].remove('-ffast-math')
         return env.Object('src/util/fpclassify.cpp')
 
-class QtScriptByteArray(Dependence):
-    def configure(self, build, conf):
-        build.env.Append(CPPPATH='#lib/qtscript-bytearray')
-
-    def sources(self, build):
-        return ['lib/qtscript-bytearray/bytearrayclass.cpp',
-                'lib/qtscript-bytearray/bytearrayprototype.cpp']
-
 class PortAudioRingBuffer(Dependence):
     def configure(self, build, conf):
         build.env.Append(CPPPATH='#lib/portaudio')
@@ -743,6 +738,7 @@ class MixxxCore(Feature):
         return True
 
     def sources(self, build):
+
         sources = ["src/control/control.cpp",
                    "src/control/controlaudiotaperpot.cpp",
                    "src/control/controlbehavior.cpp",
@@ -833,6 +829,7 @@ class MixxxCore(Feature):
                    "src/effects/builtin/autopaneffect.cpp",
                    "src/effects/builtin/phasereffect.cpp",
                    "src/effects/builtin/metronomeeffect.cpp",
+                   "src/effects/builtin/whitenoiseeffect.cpp",
                    "src/effects/builtin/tremoloeffect.cpp",
 
                    "src/engine/effects/engineeffectsmanager.cpp",
@@ -909,7 +906,6 @@ class MixxxCore(Feature):
 
                    "src/controllers/controller.cpp",
                    "src/controllers/controllerdebug.cpp",
-                   "src/controllers/controllerengine.cpp",
                    "src/controllers/controllerenumerator.cpp",
                    "src/controllers/controllerlearningeventfilter.cpp",
                    "src/controllers/controllermanager.cpp",
@@ -926,6 +922,12 @@ class MixxxCore(Feature):
                    "src/controllers/delegates/midibytedelegate.cpp",
                    "src/controllers/delegates/midioptionsdelegate.cpp",
                    "src/controllers/learningutils.cpp",
+                   "src/controllers/engine/controllerengine.cpp",
+                   "src/controllers/engine/controllerenginejsproxy.cpp",
+                   "src/controllers/engine/colormapper.cpp",
+                   "src/controllers/engine/colormapperjsproxy.cpp",
+                   "src/controllers/engine/scriptconnection.cpp",
+                   "src/controllers/engine/scriptconnectionjsproxy.cpp",
                    "src/controllers/midi/midimessage.cpp",
                    "src/controllers/midi/midiutils.cpp",
                    "src/controllers/midi/midicontroller.cpp",
@@ -935,8 +937,6 @@ class MixxxCore(Feature):
                    "src/controllers/midi/midioutputhandler.cpp",
                    "src/controllers/softtakeover.cpp",
                    "src/controllers/keyboard/keyboardeventfilter.cpp",
-                   "src/controllers/colormapper.cpp",
-                   "src/controllers/colormapperjsproxy.cpp",
 
                    "src/main.cpp",
                    "src/mixxx.cpp",
@@ -946,7 +946,9 @@ class MixxxCore(Feature):
                    "src/sources/audiosource.cpp",
                    "src/sources/audiosourcestereoproxy.cpp",
                    "src/sources/metadatasourcetaglib.cpp",
+                   "src/sources/readaheadframebuffer.cpp",
                    "src/sources/soundsource.cpp",
+                   "src/sources/soundsourceprovider.cpp",
                    "src/sources/soundsourceproviderregistry.cpp",
                    "src/sources/soundsourceproxy.cpp",
 
@@ -954,6 +956,7 @@ class MixxxCore(Feature):
                    "src/widget/wbasewidget.cpp",
                    "src/widget/wwidget.cpp",
                    "src/widget/wwidgetgroup.cpp",
+                   "src/widget/wtrackwidgetgroup.cpp",
                    "src/widget/wwidgetstack.cpp",
                    "src/widget/wsizeawarestack.cpp",
                    "src/widget/wlabel.cpp",
@@ -979,6 +982,7 @@ class MixxxCore(Feature):
                    "src/widget/wspinny.cpp",
                    "src/widget/wskincolor.cpp",
                    "src/widget/wsearchlineedit.cpp",
+                   "src/widget/wsearchrelatedtracksmenu.cpp",
                    "src/widget/wpixmapstore.cpp",
                    "src/widget/paintable.cpp",
                    "src/widget/wimagestore.cpp",
@@ -1010,7 +1014,7 @@ class MixxxCore(Feature):
 
                    "src/musicbrainz/tagfetcher.cpp",
                    "src/musicbrainz/gzip.cpp",
-                   "src/musicbrainz/crc.c",
+                   "src/musicbrainz/crc.cpp",
                    "src/musicbrainz/chromaprinter.cpp",
                    "src/musicbrainz/musicbrainz.cpp",
                    "src/musicbrainz/musicbrainzxml.cpp",
@@ -1046,6 +1050,9 @@ class MixxxCore(Feature):
                    "src/library/coverart.cpp",
                    "src/library/coverartcache.cpp",
                    "src/library/coverartutils.cpp",
+                   "src/library/trackcollectioniterator.cpp",
+                   "src/library/trackmodeliterator.cpp",
+                   "src/library/trackprocessing.cpp",
 
                    "src/library/trackset/basetracksetfeature.cpp",
                    "src/library/trackset/baseplaylistfeature.cpp",
@@ -1131,7 +1138,6 @@ class MixxxCore(Feature):
                    "src/library/bpmdelegate.cpp",
                    "src/library/previewbuttondelegate.cpp",
                    "src/library/colordelegate.cpp",
-                   "src/library/basecoverartdelegate.cpp",
                    "src/library/coverartdelegate.cpp",
                    "src/library/locationdelegate.cpp",
                    "src/library/tableitemdelegate.cpp",
@@ -1232,9 +1238,11 @@ class MixxxCore(Feature):
                    "src/track/keyutils.cpp",
                    "src/track/playcounter.cpp",
                    "src/track/replaygain.cpp",
+                   "src/track/serato/beatgrid.cpp",
                    "src/track/serato/markers.cpp",
                    "src/track/serato/markers2.cpp",
                    "src/track/serato/tags.cpp",
+                   "src/track/serato/beatsimporter.cpp",
                    "src/track/serato/cueinfoimporter.cpp",
                    "src/track/track.cpp",
                    "src/track/globaltrackcache.cpp",
@@ -1301,6 +1309,7 @@ class MixxxCore(Feature):
                    "src/util/file.cpp",
                    "src/util/mac.cpp",
                    "src/util/task.cpp",
+                   "src/util/taskmonitor.cpp",
                    "src/util/experiment.cpp",
                    "src/util/xml.cpp",
                    "src/util/tapfilter.cpp",
@@ -1321,6 +1330,7 @@ class MixxxCore(Feature):
                    "src/util/db/sqlqueryfinisher.cpp",
                    "src/util/db/sqlstringformatter.cpp",
                    "src/util/db/sqltransaction.cpp",
+                   "src/util/imageutils.cpp",
                    "src/util/sample.cpp",
                    "src/util/samplebuffer.cpp",
                    "src/util/readaheadsamplebuffer.cpp",
@@ -1328,7 +1338,6 @@ class MixxxCore(Feature):
                    "src/util/logger.cpp",
                    "src/util/logging.cpp",
                    "src/util/cmdlineargs.cpp",
-                   "src/util/autohidpi.cpp",
                    "src/util/screensaver.cpp",
                    "src/util/indexrange.cpp",
                    "src/util/desktophelper.cpp",
@@ -1337,7 +1346,6 @@ class MixxxCore(Feature):
                    "src/util/workerthread.cpp",
                    "src/util/workerthreadscheduler.cpp"
                    ]
-
         proto_args = {
             'PROTOCPROTOPATH': ['src'],
             'PROTOCPYTHONOUTDIR': '',  # set to None to not generate python
@@ -1422,6 +1430,7 @@ class MixxxCore(Feature):
 
         if build.build_is_debug:
             build.env.Append(CPPDEFINES='MIXXX_BUILD_DEBUG')
+            build.env.Append(CPPDEFINES='MIXXX_DEBUG_ASSERTIONS_ENABLED')
         elif build.build_is_release:
             build.env.Append(CPPDEFINES='MIXXX_BUILD_RELEASE')
             # Disable assert.h assertions in release mode. Some libraries use
@@ -1445,12 +1454,14 @@ class MixxxCore(Feature):
 
         if int(SCons.ARGUMENTS.get('debug_assertions_fatal', 0)):
             build.env.Append(CPPDEFINES='MIXXX_DEBUG_ASSERTIONS_FATAL')
+            build.env.Append(CPPDEFINES='MIXXX_DEBUG_ASSERTIONS_ENABLED')
 
         if build.toolchain_is_gnu:
             # Default GNU Options
             build.env.Append(CCFLAGS='-pipe')
             build.env.Append(CCFLAGS='-Wall')
             build.env.Append(CCFLAGS='-Wextra')
+            build.env.Append(CCFLAGS='-Woverloaded-virtual')
 
             if build.compiler_is_gcc and build.gcc_major_version >= 9:
                 # Avoid many warnings from GCC 9 about implicitly defined copy assignment
@@ -1621,14 +1632,12 @@ class MixxxCore(Feature):
                 CPPDEFINES=('UNIX_SHARE_PATH', r'\"%s\"' % share_path))
             lib_path = os.path.join(prefix, build.env.get(
                 'LIBDIR', default='lib'), 'mixxx')
-            build.env.Append(
-                CPPDEFINES=('UNIX_LIB_PATH', r'\"%s\"' % lib_path))
 
     def depends(self, build):
         return [SoundTouch, ReplayGain, Ebur128Mit, PortAudio, PortMIDI, Qt, TestHeaders,
                 FidLib, SndFile, FLAC, OggVorbis, OpenGL, TagLib, ProtoBuf,
                 Chromaprint, RubberBand, SecurityFramework, CoreServices, IOKit,
-                QtScriptByteArray, Reverb, FpClassify, PortAudioRingBuffer, LAME,
+                Reverb, FpClassify, PortAudioRingBuffer, LAME,
                 QueenMaryDsp, Kaitai, MP3GuessEnc, RigtorpSPSCQueue]
 
     def post_dependency_check_configure(self, build, conf):

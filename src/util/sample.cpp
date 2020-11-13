@@ -135,7 +135,7 @@ void SampleUtil::applyRampingGain(CSAMPLE* pBuffer, CSAMPLE_GAIN old_gain,
 
     const CSAMPLE_GAIN gain_delta = (new_gain - old_gain)
             / CSAMPLE_GAIN(numSamples / 2);
-    if (gain_delta) {
+    if (gain_delta != 0) {
         const CSAMPLE_GAIN start_gain = old_gain + gain_delta;
         // note: LOOP VECTORIZED.
         for (int i = 0; i < numSamples / 2; ++i) {
@@ -178,7 +178,7 @@ void SampleUtil::applyRampingAlternatingGain(CSAMPLE* pBuffer,
 
     const CSAMPLE_GAIN gain1Delta = (gain1 - gain1Old)
             / CSAMPLE_GAIN(numSamples / 2);
-    if (gain1Delta) {
+    if (gain1Delta != 0) {
         const CSAMPLE_GAIN start_gain = gain1Old + gain1Delta;
         // note: LOOP VECTORIZED.
         for (int i = 0; i < numSamples / 2; ++i) {
@@ -194,7 +194,7 @@ void SampleUtil::applyRampingAlternatingGain(CSAMPLE* pBuffer,
 
     const CSAMPLE_GAIN gain2Delta = (gain2 - gain2Old)
             / CSAMPLE_GAIN(numSamples / 2);
-    if (gain2Delta) {
+    if (gain2Delta != 0) {
         const CSAMPLE_GAIN start_gain = gain2Old + gain2Delta;
         // note: LOOP VECTORIZED.
         for (int i = 0; i < numSamples / 2; ++i) {
@@ -243,7 +243,7 @@ void SampleUtil::addWithRampingGain(CSAMPLE* M_RESTRICT pDest,
 
     const CSAMPLE_GAIN gain_delta = (new_gain - old_gain)
             / CSAMPLE_GAIN(numSamples / 2);
-    if (gain_delta) {
+    if (gain_delta != 0) {
         const CSAMPLE_GAIN start_gain = old_gain + gain_delta;
         // note: LOOP VECTORIZED.
         for (int i = 0; i < numSamples / 2; ++i) {
@@ -336,7 +336,7 @@ void SampleUtil::copyWithRampingGain(CSAMPLE* M_RESTRICT pDest,
 
     const CSAMPLE_GAIN gain_delta = (new_gain - old_gain)
             / CSAMPLE_GAIN(numSamples / 2);
-    if (gain_delta) {
+    if (gain_delta != 0) {
         const CSAMPLE_GAIN start_gain = old_gain + gain_delta;
         // note: LOOP VECTORIZED only with "int i"
         for (int i = 0; i < numSamples / 2; ++i) {
@@ -446,19 +446,37 @@ void SampleUtil::deinterleaveBuffer(CSAMPLE* M_RESTRICT pDest1,
 }
 
 // static
-void SampleUtil::linearCrossfadeBuffers(CSAMPLE* pDest,
-        const CSAMPLE* pSrcFadeOut, const CSAMPLE* pSrcFadeIn,
+void SampleUtil::linearCrossfadeBuffersOut(
+        CSAMPLE* pDestSrcFadeOut,
+        const CSAMPLE* pSrcFadeIn,
         SINT numSamples) {
+    // M_RESTRICT unoptimizes the function for some reason.
     const CSAMPLE_GAIN cross_inc = CSAMPLE_GAIN_ONE
             / CSAMPLE_GAIN(numSamples / 2);
     // note: LOOP VECTORIZED. only with "int i"
     for (int i = 0; i < numSamples / 2; ++i) {
         const CSAMPLE_GAIN cross_mix = cross_inc * i;
-        pDest[i * 2] = pSrcFadeIn[i * 2] * cross_mix
-                + pSrcFadeOut[i * 2] * (CSAMPLE_GAIN_ONE - cross_mix);
-        pDest[i * 2 + 1] = pSrcFadeIn[i * 2 + 1] * cross_mix
-                + pSrcFadeOut[i * 2 + 1] * (CSAMPLE_GAIN_ONE - cross_mix);
+        pDestSrcFadeOut[i * 2] *= (CSAMPLE_GAIN_ONE - cross_mix);
+        pDestSrcFadeOut[i * 2] += pSrcFadeIn[i * 2] * cross_mix;
+        pDestSrcFadeOut[i * 2 + 1] *= (CSAMPLE_GAIN_ONE - cross_mix);
+        pDestSrcFadeOut[i * 2 + 1] += pSrcFadeIn[i * 2 + 1] * cross_mix;
+    }
+}
 
+// static
+void SampleUtil::linearCrossfadeBuffersIn(
+        CSAMPLE* pDestSrcFadeIn,
+        const CSAMPLE* pSrcFadeOut,
+        SINT numSamples) {
+    // M_RESTRICT unoptimizes the function for some reason.
+    const CSAMPLE_GAIN cross_inc = CSAMPLE_GAIN_ONE / CSAMPLE_GAIN(numSamples / 2);
+    // note: LOOP VECTORIZED. only with "int i"
+    for (int i = 0; i < numSamples / 2; ++i) {
+        const CSAMPLE_GAIN cross_mix = cross_inc * i;
+        pDestSrcFadeIn[i * 2] *= cross_mix;
+        pDestSrcFadeIn[i * 2] += pSrcFadeOut[i * 2] * (CSAMPLE_GAIN_ONE - cross_mix);
+        pDestSrcFadeIn[i * 2 + 1] *= cross_mix;
+        pDestSrcFadeIn[i * 2 + 1] += pSrcFadeOut[i * 2 + 1] * (CSAMPLE_GAIN_ONE - cross_mix);
     }
 }
 

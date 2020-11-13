@@ -59,7 +59,6 @@ Cue::Cue()
 
 Cue::Cue(
         int id,
-        TrackId trackId,
         mixxx::CueType type,
         double position,
         double length,
@@ -68,13 +67,12 @@ Cue::Cue(
         mixxx::RgbColor color)
         : m_bDirty(false),
           m_iId(id),
-          m_trackId(trackId),
           m_type(type),
           m_sampleStartPosition(position),
           m_iHotCue(hotCue),
           m_label(label),
           m_color(color) {
-    if (length) {
+    if (length != 0) {
         if (position != Cue::kNoPosition) {
             m_sampleEndPosition = position + length;
         } else {
@@ -87,8 +85,9 @@ Cue::Cue(
 
 Cue::Cue(
         const mixxx::CueInfo& cueInfo,
-        mixxx::audio::SampleRate sampleRate)
-        : m_bDirty(false),
+        mixxx::audio::SampleRate sampleRate,
+        bool setDirty)
+        : m_bDirty(setDirty),
           m_iId(-1),
           m_type(cueInfo.getType()),
           m_sampleStartPosition(
@@ -130,26 +129,6 @@ void Cue::setId(int cueId) {
     // Unintended side effects with the LibraryScanner occur
     // when adding new tracks that have their cue points stored
     // in Serato marker tags!!
-}
-
-TrackId Cue::getTrackId() const {
-    QMutexLocker lock(&m_mutex);
-    return m_trackId;
-}
-
-void Cue::setTrackId(TrackId trackId) {
-    QMutexLocker lock(&m_mutex);
-    if (m_trackId == trackId) {
-        return;
-    }
-    m_trackId = trackId;
-    // Mark as dirty, but DO NOT emit the updated() signal.
-    // The receiver is the corresponding Track object that
-    // would in turn be marked as dirty. This could cause
-    // unintended side effects with the LibraryScanner when
-    // adding new tracks that have their cue points stored
-    // in Serato marker tags!!
-    m_bDirty = true;
 }
 
 mixxx::CueType Cue::getType() const {

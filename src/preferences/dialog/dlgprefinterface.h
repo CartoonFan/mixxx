@@ -41,12 +41,12 @@ class DlgPrefInterface : public DlgPreferencePage, public Ui::DlgPrefControlsDlg
   public:
     DlgPrefInterface(QWidget *parent, MixxxMainWindow *mixxx,
                     SkinLoader* pSkinLoader, UserSettingsPointer pConfig);
-    virtual ~DlgPrefInterface();
+    ~DlgPrefInterface() override = default;
 
   public slots:
-    void slotUpdate();
-    void slotApply();
-    void slotResetToDefaults();
+    void slotUpdate() override;
+    void slotApply() override;
+    void slotResetToDefaults() override;
 
     void slotSetTooltips();
     void slotSetSkinDescription(QString skin);
@@ -59,13 +59,13 @@ class DlgPrefInterface : public DlgPreferencePage, public Ui::DlgPrefControlsDlg
   private:
     void notifyRebootNecessary();
     void loadTooltipPreferenceFromConfig();
-    bool checkSkinResolution(QString skin);
 
     // Because the CueDefault list is out of order, we have to set the combo
     // box using the user data, not the index.  Returns the index of the item
     // that has the corresponding userData. If the userdata is not in the list,
     // returns zero.
     int cueDefaultIndexByData(int userData) const;
+    QScreen* getScreen() const;
 
     UserSettingsPointer m_pConfig;
     ControlObject* m_pControlTrackTimeDisplay;
